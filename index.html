@@ -412,52 +412,59 @@ onValue(ref(db,"countingRoom/messages"), snap => {
     });
   });
 
-  function sendMsg(){
+import { runTransaction } from "https://www.gstatic.com/firebasejs/12.2.1/firebase-database.js";
+
+function sendMsg() {
   const val = parseInt(input.value);
   if (isNaN(val)) return;
 
-  const time = new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"});
+  const time = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
-  // Check if correct number
-  const isCorrect = (val === current + 1);
+  runTransaction(ref(db, "countingRoom"), (room) => {
+    if (!room) {
+      room = { current: 0, topScore: 0, lastUser: null };
+    }
 
-  // 👇 Fetch lastUser from db before deciding
-  update(ref(db, "countingRoom"), {}).then(() => {
-    onValue(ref(db, "countingRoom/lastUser"), snap => {
-      const lastUser = snap.val();
+    const expected = room.current + 1;
 
-      if (!isCorrect || lastUser === userName) {
-        // ❌ Wrong number OR same user again
-        push(ref(db,"countingRoom/messages"), {
-          user: userName,
-          number: val,
-          status: "ruin",
-          time
-        });
-        update(ref(db,"countingRoom"), { current: 0, lastUser: null });
-      } else {
-        // ✅ Correct & new user
-        push(ref(db,"countingRoom/messages"), {
-          user: userName,
-          number: val,
-          status: "correct",
-          time
-        });
-        update(ref(db,"countingRoom"), {
-          current: val,
-          topScore: Math.max(val, topScore || 0),
-          lastUser: userName
-        });
-        if (uid) update(ref(db,"users/"+uid), {
+    if (val === expected && room.lastUser !== uid) {
+      // ✅ Correct
+      room.current = val;
+      room.topScore = Math.max(val, room.topScore || 0);
+      room.lastUser = uid;
+
+      push(ref(db, "countingRoom/messages"), {
+        user: userName,
+        number: val,
+        status: "correct",
+        time
+      });
+
+      if (uid) {
+        update(ref(db, "users/" + uid), {
           displayName: userName,
           totalCounts: increment(1)
         });
       }
+    } else {
+      // ❌ Wrong count or same user twice
+      room.current = 0;
+      room.lastUser = null;
 
-      input.value="";
-    }, { onlyOnce:true });
+      push(ref(db, "countingRoom/messages"), {
+        user: userName,
+        number: val,
+        status: "ruin",
+        time
+      });
+    }
+
+    return room;
   });
+
+  input.value = "";
 }
+
 
 
   function renderMsg(msg){
@@ -500,3 +507,4 @@ onValue(ref(db,"countingRoom/messages"), snap => {
 </script>
 </body>
 </html>
+
